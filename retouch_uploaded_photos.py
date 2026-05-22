@@ -84,7 +84,12 @@ def _remove_small_components(bg_mask: np.ndarray, min_area: int) -> np.ndarray:
     return cleaned
 
 
-def white_background(image: Image.Image, *, remove_all_corner_like: bool = False) -> Image.Image:
+def white_background(
+    image: Image.Image,
+    *,
+    remove_all_corner_like: bool = False,
+    clean_exterior_gray_residue: bool = False,
+) -> Image.Image:
     arr = np.asarray(image.convert("RGB")).astype(np.int16)
     maxc = arr.max(axis=2)
     minc = arr.min(axis=2)
@@ -109,6 +114,10 @@ def white_background(image: Image.Image, *, remove_all_corner_like: bool = False
     colored_or_patterned_bg = np.median(seed_distance_to_white) > 35 and np.median(seed_chroma) > 30
     if colored_or_patterned_bg:
         bg_mask = _remove_small_components(bg_mask, max(80, arr.shape[0] * arr.shape[1] // 100))
+    if clean_exterior_gray_residue:
+        gray_residue = (chroma < 34) & (lightness > 60) & (lightness < 252)
+        exterior_residue = _connected_to_edge(bg_mask | gray_residue) & gray_residue
+        bg_mask |= exterior_residue
     if remove_all_corner_like:
         bg_mask |= corner_like
 
@@ -142,6 +151,12 @@ def main() -> None:
             # This source has scattered pastel border marks that are the same
             # color family as the removed corner background.
             remove_all_corner_like=path.name.endswith("12.07.11 (3).jpeg"),
+            clean_exterior_gray_residue=path.name
+            in {
+                "WhatsApp Image 2026-05-22 at 12.07.10 (1).jpeg",
+                "WhatsApp Image 2026-05-22 at 12.18.02.jpeg",
+                "WhatsApp Image 2026-05-22 at 12.18.08.jpeg",
+            },
         )
         final = enhance(cleaned)
         final.save(OUTPUT_DIR / path.name, quality=96, subsampling=0, optimize=True)
