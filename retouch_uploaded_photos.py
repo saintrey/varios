@@ -10,6 +10,12 @@ from PIL import Image, ImageEnhance, ImageFilter, ImageOps
 INPUT_DIR = Path("photo_work/originals")
 OUTPUT_DIR = Path("fotos_retocadas")
 
+ANTI_PIXELATED_FILES = {
+    "WhatsApp Image 2026-05-22 at 12.17.41.jpeg",
+    "WhatsApp Image 2026-05-22 at 12.17.46.jpeg",
+    "WhatsApp Image 2026-05-22 at 12.18.08.jpeg",
+}
+
 
 def _background_seed_colors(arr: np.ndarray) -> np.ndarray:
     """Return conservative background colors sampled from the corners."""
@@ -140,6 +146,21 @@ def enhance(image: Image.Image) -> Image.Image:
     return ImageEnhance.Sharpness(upscaled).enhance(1.08)
 
 
+def enhance_low_resolution(image: Image.Image) -> Image.Image:
+    max_dim = max(image.size)
+    scale = max(4.0, 1800 / max_dim)
+    new_size = (round(image.width * scale), round(image.height * scale))
+
+    # Low-resolution sources look blocky when aggressively sharpened, so this
+    # path favors smoother interpolation and only a mild final edge recovery.
+    upscaled = image.resize(new_size, Image.Resampling.BICUBIC)
+    upscaled = upscaled.filter(ImageFilter.GaussianBlur(radius=0.12))
+    upscaled = ImageOps.autocontrast(upscaled, cutoff=0.2)
+    upscaled = ImageEnhance.Color(upscaled).enhance(1.06)
+    upscaled = ImageEnhance.Contrast(upscaled).enhance(1.03)
+    return upscaled.filter(ImageFilter.UnsharpMask(radius=1.5, percent=70, threshold=4))
+
+
 def main() -> None:
     OUTPUT_DIR.mkdir(exist_ok=True)
     for path in sorted(INPUT_DIR.glob("*.jpeg")):
@@ -158,7 +179,7 @@ def main() -> None:
                 "WhatsApp Image 2026-05-22 at 12.18.08.jpeg",
             },
         )
-        final = enhance(cleaned)
+        final = enhance_low_resolution(cleaned) if path.name in ANTI_PIXELATED_FILES else enhance(cleaned)
         final.save(OUTPUT_DIR / path.name, quality=96, subsampling=0, optimize=True)
         print(f"{path.name}: {image.size} -> {final.size}")
 
